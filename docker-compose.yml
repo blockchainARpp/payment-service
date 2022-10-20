@@ -1,0 +1,81 @@
+version: '2.1'
+services:
+  payment-worker-node:
+    container_name: payment-worker-node
+    restart: always
+    depends_on:
+      payment-mongo:
+        condition: service_healthy
+      payment-mq:
+        condition: service_healthy
+    build:
+      context: .
+      dockerfile: worker.Dockerfile
+    networks:
+      - services-tier
+    ports:
+      - $GLS_CONNECTOR_HOST:$GLS_CONNECTOR_PORT:$GLS_CONNECTOR_PORT
+      - $GLS_METRICS_HOST:$GLS_METRICS_PORT:$GLS_METRICS_PORT
+    env_file:
+      - .env
+
+  payment-api-node:
+    container_name: payment-api-node
+    restart: always
+    depends_on:
+      payment-mq:
+        condition: service_healthy
+    build:
+      context: .
+      dockerfile: api.Dockerfile
+    networks:
+      - services-tier
+    ports:
+      - $GLS_CONNECTOR_HOST:$GLS_CONNECTOR_API_PORT:$GLS_CONNECTOR_API_PORT
+      - $GLS_METRICS_HOST:$GLS_METRICS_API_PORT:$GLS_METRICS_API_PORT
+    environment:
+      - GLS_CONNECTOR_PORT=$GLS_CONNECTOR_API_PORT
+      - GLS_METRICS_PORT=$GLS_METRICS_API_PORT
+    env_file:
+      - .env
+
+  payment-mongo:
+    container_name: payment-mongo
+    image: mongo
+    restart: always
+    healthcheck:
+      test: mongo --eval 'db.getCollectionNames()'
+      interval: 10s
+      timeout: 2s
+      retries: 10
+    volumes:
+      - payment_mongodb_vol:/data/db
+    ports:
+      - 127.0.0.1:27017:27017
+    networks:
+      - services-tier
+
+  payment-mq:
+    container_name: payment-mq
+    image: rabbitmq:3
+    restart: always
+    healthcheck:
+      test: rabbitmq-diagnostics ping -q
+      interval: 10s
+      timeout: 2s
+      retries: 10
+    volumes:
+      - payment_mq_vol:/var/lib/rabbitmq/mnesia
+    ports:
+      - 127.0.0.1:5672:5672
+    environment:
+      - NODENAME=rabbit@payment-mq
+    networks:
+      - services-tier
+
+networks:
+  services-tier:
+
+volumes:
+  payment_mongodb_vol:
+  payment_mq_vol:
